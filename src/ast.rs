@@ -1,38 +1,196 @@
-use crate::lexer::{LiteralType, Token};
+use crate::lexer::{Lexeme, Token};
+use crate::navigator::{EOF, NEWLINE};
 use std::iter::Peekable;
 
-#[derive(Debug)]
+type Ast = Vec<AstNode>;
+
+#[derive(Debug, Clone)]
 pub enum AstNode {
-    Program {
-        name: String,
-        contents: Vec<Box<AstNode>>,
-    },
-    FunctionDecl {
-        name: String,
-        params: Vec<(String, Type)>,
-        returntype: Type,
-        contents: Vec<Box<AstNode>>,
-    },
-    FunctionCall {
-        name: String,
-        args: Vec<SubExpression>,
-    },
-    VariableDecl {
-        name: String,
-        value: Box<AstNode>,
-    },
-    Expression {
-        expr: SubExpression,
-    },
-    Ident {
-        value: String,
-    },
-    Conditional {
-        expression: SubExpression,
-        if_true: Option<Vec<Box<AstNode>>>,
-        if_false: Option<Vec<Box<AstNode>>>,
-    },
+    FunctionDecl(FunctionDecl),
+    GlobalVarDecl(VarDecl),
+    VarDecl(VarDecl),
+    IfStatement(IfStatement),
+    WhileStatement(WhileStatement),
 }
+
+#[derive(Debug, Clone)]
+pub struct Block {
+    statements: Vec<AstNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionDecl {
+    identifier: String,
+    params: Vec<(String, Type)>,
+    returntype: Type,
+    block: Block,
+}
+
+#[derive(Debug, Clone)]
+pub struct VarDecl {
+    identifier: String,
+    value: Expr,
+    immutable: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct IfStatement {
+    condition: Expr,
+    if_true: Block,
+    if_false: Block,
+}
+
+#[derive(Debug, Clone)]
+pub struct WhileStatement {
+    condition: Expr,
+    block: Block,
+}
+
+#[derive(Debug, Clone)]
+pub enum Expr {
+    Literal(String, Type),
+    Ident(String),
+    FnCall(String, Vec<Expr>),
+
+    Add(Box<Expr>, Box<Expr>),
+    Sub(Box<Expr>, Box<Expr>),
+    Mul(Box<Expr>, Box<Expr>),
+    Div(Box<Expr>, Box<Expr>),
+
+    Eq(Box<Expr>, Box<Expr>),
+    Ne(Box<Expr>, Box<Expr>),
+    Gt(Box<Expr>, Box<Expr>),
+    Ge(Box<Expr>, Box<Expr>),
+    Lt(Box<Expr>, Box<Expr>),
+    Le(Box<Expr>, Box<Expr>),
+}
+
+#[derive(Debug, Clone)]
+pub enum Type {
+    Int,
+    Float,
+    Bool,
+    Str,
+    Nothing,
+    Custom(String),
+}
+
+pub struct Parser<'a> {
+    pub lexemes: Peekable<Box<dyn Iterator<Item = Lexeme> + 'a>>,
+    pub file_str: &'a str,
+    // errors will be tracked sooon
+    pub errors: Vec<String>,
+}
+
+impl<'a> Parser<'a> {
+    pub fn new(
+        lexemes: Peekable<Box<dyn Iterator<Item = Lexeme> + 'a>>,
+        file_str: &'a str,
+    ) -> Parser<'a> {
+        Parser {
+            lexemes,
+            file_str,
+            errors: Vec::new(),
+        }
+    }
+    pub fn parse(&mut self) -> Ast {
+        self.program()
+    }
+    fn row_and_col_of(&self, lexeme: &Lexeme) -> (usize, usize) {
+        let substr = &self.file_str[0..=lexeme.span.start];
+
+        let row = substr.chars().filter(|ch| *ch == NEWLINE).count();
+        let mut col = 0;
+        if row != 0 {
+            for (i, ch) in substr.chars().rev().enumerate() {
+                if ch == '\n' {
+                    break;
+                }
+                col = i;
+            }
+        } else {
+            col = lexeme.span.start;
+        }
+        (row, col)
+    }
+    fn error(&mut self, error_string: String, lexeme: &Lexeme) {
+        let (row, col) = self.row_and_col_of(lexeme);
+
+        self.errors
+            .push(format!("{}:{} > {}", row, col, error_string));
+    }
+    fn program(&mut self) -> Ast {
+        let mut ast: Ast = Vec::<AstNode>::new();
+
+        while self.lexemes.peek().is_some() {
+            match self.lexemes.next().unwrap().token {
+                Token::Function => ast.push(self.function_declaration()),
+                Token::Var => ast.push(self.global_variable_declaration()),
+                _ => unimplemented!(),
+            }
+        }
+        ast
+    }
+    fn function_declaration(&mut self) -> AstNode {
+        let ident = self.ident();
+        if self.lexemes.peek().is_none() {
+            panic!("missing opening bracket on function declaration");
+        }
+        if self.lexemes.next().unwrap().token != Token::OpenParen {
+            panic!("missing opening bracket or malformed argument list in function declaration");
+        }
+        let mut params: Vec<(String, Type)> = Vec::new();
+        while self.lexemes.peek().unwrap().token == Token::Ident {
+            let param = self.ident_with_explicit_type();
+            params.push(param);
+        }
+        unimplemented!()
+        /*
+        FunctionDecl(FunctionDecl { identifier: ident, params, /*returntype, block*/}
+        */
+    }
+    fn ident_with_explicit_type(&mut self) -> (String, Type) {
+        let ident = self.ident();
+        let vartype = self.explicit_type();
+        (ident, vartype)
+    }
+    pub fn explicit_type(&mut self) -> Type {
+        if self.lexemes.peek().is_none() || self.lexemes.peek().unwrap().token != Token::As {
+            panic!("expected 'as'");
+        }
+        self.lexemes.next();
+        let vartype = self.type_identifier();
+        vartype
+    }
+    fn type_identifier(&mut self) -> Type {
+        if self.lexemes.peek().is_none() {
+            panic!("expected type aftre 'as'");
+        }
+        match self.lexemes.peek().unwrap().token {
+            Token::IntType => Type::Int,
+            Token::FloatType => Type::Float,
+            Token::BoolType => Type::Bool,
+            Token::StrType => Type::Str,
+            Token::NothingType => Type::Nothing,
+            _ => panic!("unknown type"),
+        }
+    }
+    fn ident(&mut self) -> String {
+        let lexeme = self.lexemes.next().unwrap();
+        if lexeme.token == Token::Ident {
+            return self.file_str[lexeme.span.start..lexeme.span.end].to_owned();
+        } else {
+            panic!("expected ident");
+        }
+    }
+    fn global_variable_declaration(&mut self) -> AstNode {
+        unimplemented!()
+    }
+}
+
+// unused vvvvvvvv just keeping it because idk
+
+/*
 
 /// fuck
 #[derive(Debug)]
@@ -289,3 +447,4 @@ impl IdkWtfImDoing {
         Box::new(AstNode::Expression { expr })
     }
 }
+*/

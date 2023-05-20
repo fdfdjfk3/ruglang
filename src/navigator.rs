@@ -33,16 +33,7 @@ impl<'a> Navigator<'a> {
     pub fn position(&self) -> isize {
         self.position
     }
-    pub fn yoink_char(&self, at: usize) -> String {
-        self.file_text[at..=at].to_string()
-    }
     pub fn yoink_to_string(&self, start: usize, end: usize) -> String {
         self.file_text[start..end].to_string()
-    }
-    pub fn yoink_to_i64(&self, start: usize, end: usize) -> Result<i64, std::num::ParseIntError> {
-        str::parse::<i64>(&self.file_text[start..end])
-    }
-    pub fn yoink_to_f64(&self, start: usize, end: usize) -> Result<f64, std::num::ParseFloatError> {
-        str::parse::<f64>(&self.file_text[start..end])
     }
 }

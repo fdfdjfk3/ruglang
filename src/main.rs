@@ -11,13 +11,20 @@ fn main() {
     let mut file = File::open(&path).unwrap();
 
     let mut text = String::new();
-    file.read_to_string(&mut text);
-
+    file.read_to_string(&mut text).unwrap();
     let tokens = lexer::tokenize(&text);
-    for token in &tokens {
+    /*
+    for token in tokens {
         println!("{:?}", token);
     }
-    let ast = ast::create_ast(tokens);
+    */
+    let mut parser = ast::Parser::new(tokens.peekable(), &text);
+    let ast = parser.parse();
+
+    for a in parser.errors {
+        println!("{}", a);
+    }
+    /*
     if let ast::AstNode::Program {
         contents: ref c, ..
     } = *ast
@@ -26,6 +33,7 @@ fn main() {
             println!("{:?}", elem);
         }
     }
+    */
 
     //let a = toker::tokenize(file);
 }

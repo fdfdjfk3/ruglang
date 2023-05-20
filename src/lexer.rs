@@ -9,18 +9,24 @@ pub enum LexerError {
 
 /// Token parsed directly from the file.
 /// Tokens on their own cannot express the layout of a program, that happens once the AST is created
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Token {
-    Ident {
-        val: String,
-    },
+    Ident,
     Var,
     Function,
     As,
     Returns,
-    Literal {
-        lit_type: LiteralType,
-    },
+
+    StrLiteral,
+    IntLiteral,
+    FloatLiteral,
+    BoolLiteral,
+
+    StrType,
+    IntType,
+    FloatType,
+    BoolType,
+    NothingType,
     // =
     Equals,
     // +
@@ -50,73 +56,44 @@ pub enum Token {
 
     EOF,
 
-    #[allow(dead_code)]
-    Whitespace,
-
     Unknown,
 
     Comment,
-    // error values that will be handled later
-    /*
-    InvalidLiteral {
-        lit_type: LiteralType,
-        error_type: LexerError,
-    },
-    */
 }
 
-impl Token {
-    pub fn can_be_operator(&self) -> bool {
-        match self {
-            Self::Plus => true,
-            Self::Minus => true,
-            Self::Asterisk => true,
-            Self::Slash => true,
-            _ => false,
-        }
-    }
-    pub fn could_be_a_value(&self) -> bool {
-        match self {
-            Self::Literal { .. } => true,
-            Self::Ident { .. } => true,
-            _ => false,
-        }
-    }
-    pub fn operator_precedence(&self) -> u8 {
-        match self {
-            t if *t == Self::Asterisk || *t == Self::Slash => 1,
-            t if *t == Self::Plus || *t == Self::Minus => 2,
-            _ => panic!("non-operator does not have a precedence"),
-        }
-    }
+/// Copyable range
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
 }
 
-#[derive(PartialEq, Debug, Clone)]
-pub enum LiteralType {
-    Integer { val: i64 },
-    Float { val: f64 },
-    Str { val: String },
-    Boolean { val: bool },
+/// Token parsed from source file
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Lexeme {
+    pub token: Token,
+    pub span: Span,
 }
 
 /// Create an iterator over ruglang tokens parsed from the file
-pub fn tokenize(input: &str) -> Vec<Token> {
+pub fn tokenize(input: &str) -> Box<dyn Iterator<Item = Lexeme> + '_> {
     let mut navigator = Navigator::new(input);
-    std::iter::from_fn(move || {
-        let token = navigator.read_token();
-        if token != Token::EOF {
-            Some(token)
+    Box::new(std::iter::from_fn(move || {
+        let lexeme = navigator.read_token();
+        if lexeme.token != Token::EOF {
+            Some(lexeme)
         } else {
             None
         }
-    })
-    .collect()
+    }))
 }
 
 impl Navigator<'_> {
-    pub fn read_token(&mut self) -> Token {
+    pub fn read_token(&mut self) -> Lexeme {
         self.skip_whitespace();
-        let token_kind = match self.bump() {
+        let initial = self.bump();
+        let start = self.position() as usize;
+        let token_type = match initial {
             '/' => match self.first() {
                 '/' => {
                     self.consume_until_newline();
@@ -146,7 +123,11 @@ impl Navigator<'_> {
             EOF => Token::EOF,
             _ => Token::Unknown,
         };
-        token_kind
+        let end = self.position() as usize + 1;
+        Lexeme {
+            token: token_type,
+            span: Span { start, end },
+        }
     }
     /// Skip past the pesky whitespace.
     fn skip_whitespace(&mut self) {
@@ -162,33 +143,18 @@ impl Navigator<'_> {
     }
     /// Collect quoted string if valid.
     fn quoted_string(&mut self) -> Token {
-        let start = self.position() as usize + 1;
         while self.first() != '"' && self.first() != EOF {
             self.bump();
         }
         self.bump();
-        let end = self.position() as usize;
         if unicode_xid::UnicodeXID::is_xid_start(self.first()) {
             panic!("Parse error when parsing a string at line uhhhh actually idk lol ill implement errors later");
-            /*
-            return Token::InvalidLiteral {
-                lit_type: LiteralType::Str {
-                    val: self.yoink_to_string(start, end),
-                },
-                error_type: LexerError::ExtraSymbols(self.yoink_char(end + 1)),
-            };
-            */
         }
-        Token::Literal {
-            lit_type: LiteralType::Str {
-                val: self.yoink_to_string(start, end),
-            },
-        }
+        Token::StrLiteral
     }
     /// Parse either an Integer or Float
     fn number(&mut self) -> Token {
         let mut dots = 0;
-        let start = self.position() as usize;
 
         while !self.first().is_whitespace() {
             // could this possibly be a float?
@@ -199,38 +165,18 @@ impl Navigator<'_> {
                         "error parsing number, theres a dot but its not a valid float helppppp"
                     ),
                 }
-            } else if self.first() == ';' {
-                break;
             } else if !self.first().is_ascii_digit() {
-                panic!("messed up number literal lmfaoo bruh :skull:");
-            }
+                break;
+            } /*else if Self::is_id_start(self.first()) {
+                  panic!("messed up number literal lmfaoo bruh :skull:");
+              }
+              */
             self.bump();
         }
-        let end = self.position() as usize + 1;
 
         match dots {
-            0 => {
-                let maybe_i64_value = self.yoink_to_i64(start, end);
-                if let Err(e) = maybe_i64_value {
-                    panic!("Error parsing Integer value at line bla bla bla: {}", e);
-                }
-                Token::Literal {
-                    lit_type: LiteralType::Integer {
-                        val: maybe_i64_value.unwrap(),
-                    },
-                }
-            }
-            1 => {
-                let maybe_f64_value = self.yoink_to_f64(start, end);
-                if let Err(e) = maybe_f64_value {
-                    panic!("Error parsing Float value at line bla bla bla: {}", e);
-                }
-                Token::Literal {
-                    lit_type: LiteralType::Float {
-                        val: maybe_f64_value.unwrap(),
-                    },
-                }
-            }
+            0 => Token::IntLiteral,
+            1 => Token::FloatLiteral,
             _ => panic!("uh oh invalid number !!!!"),
         }
     }
@@ -245,14 +191,10 @@ impl Navigator<'_> {
     }
     /// unused for now
     fn _ident(&mut self) -> Token {
-        let start = self.position() as usize;
         while unicode_xid::UnicodeXID::is_xid_continue(self.first()) {
             self.bump();
         }
-        let end = self.position() as usize + 1;
-        Token::Ident {
-            val: self.yoink_to_string(start, end),
-        }
+        Token::Ident
     }
     fn boolean_or_ident(&mut self) -> Token {
         let start = self.position() as usize;
@@ -262,19 +204,18 @@ impl Navigator<'_> {
         let end = self.position() as usize + 1;
         let segment = self.yoink_to_string(start, end);
         match &segment[..] {
-            "true" => Token::Literal {
-                lit_type: LiteralType::Boolean { val: true },
-            },
-            "false" => Token::Literal {
-                lit_type: LiteralType::Boolean { val: false },
-            },
+            "true" => Token::BoolLiteral,
+            "false" => Token::BoolLiteral,
             "var" => Token::Var,
             "function" => Token::Function,
             "as" => Token::As,
             "returns" => Token::Returns,
-            _ => Token::Ident {
-                val: self.yoink_to_string(start, end),
-            },
+            "Int" => Token::IntType,
+            "Float" => Token::FloatType,
+            "Bool" => Token::BoolType,
+            "Str" => Token::StrType,
+            "Nothing" => Token::NothingType,
+            _ => Token::Ident,
         }
     }
 }
