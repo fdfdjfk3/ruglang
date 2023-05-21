@@ -53,12 +53,17 @@ pub enum Token {
     LeftAngleBracket,
     // >
     RightAngleBracket,
+    // ,
+    Comma,
 
     EOF,
 
     Unknown,
 
     Comment,
+
+    // only for use in the ast file, used as a wildcard
+    Any,
 }
 
 /// Copyable range
@@ -119,6 +124,7 @@ impl Navigator<'_> {
             '.' => Token::Dot,
             '<' => Token::LeftAngleBracket,
             '>' => Token::RightAngleBracket,
+            ',' => Token::Comma,
 
             EOF => Token::EOF,
             _ => Token::Unknown,

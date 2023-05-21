@@ -1,8 +1,10 @@
 use crate::lexer::{Lexeme, Token};
 use crate::navigator::{EOF, NEWLINE};
+
 use std::iter::Peekable;
 
 type Ast = Vec<AstNode>;
+type Block = Vec<AstNode>;
 
 #[derive(Debug, Clone)]
 pub enum AstNode {
@@ -11,11 +13,6 @@ pub enum AstNode {
     VarDecl(VarDecl),
     IfStatement(IfStatement),
     WhileStatement(WhileStatement),
-}
-
-#[derive(Debug, Clone)]
-pub struct Block {
-    statements: Vec<AstNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +80,7 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
+    /// returns a new Parser
     pub fn new(
         lexemes: Peekable<Box<dyn Iterator<Item = Lexeme> + 'a>>,
         file_str: &'a str,
@@ -93,9 +91,49 @@ impl<'a> Parser<'a> {
             errors: Vec::new(),
         }
     }
+    /// checks what's ahead. if it's not same as expected, it emits an error. uses .next().
+    fn expect(&mut self, expected: Token, context: &str) -> Option<Lexeme> {
+        let lexeme = self.lexemes.next();
+        if lexeme.is_none() {
+            self.report_error(
+                format!(
+                    "{}: Expected token {:?}, found {:?} instead.",
+                    context,
+                    expected,
+                    Token::EOF
+                ),
+                None,
+            );
+        }
+        let lexeme = lexeme.unwrap();
+
+        if lexeme.token == expected || expected == Token::Any {
+            return Some(lexeme);
+        }
+        self.report_error(
+            format!(
+                "{}: Expected token {:?}, found {:?} instead.",
+                context, expected, lexeme.token,
+            ),
+            Some(&lexeme),
+        );
+
+        None
+    }
+    /// casually check if a lexeme matches the input. does not report an error if it doesn't match.
+    /// uses .peek().
+    fn next_is(&mut self, expected: Token) -> bool {
+        let lexeme = self.lexemes.peek();
+        if lexeme.is_none() || lexeme.unwrap().token != expected {
+            return false;
+        }
+        true
+    }
+    /// parses a program and returns Ast (Vec<AstNode>)
     pub fn parse(&mut self) -> Ast {
         self.program()
     }
+    /// gets the row and column of where a lexeme starts.
     fn row_and_col_of(&self, lexeme: &Lexeme) -> (usize, usize) {
         let substr = &self.file_str[0..=lexeme.span.start];
 
@@ -103,7 +141,7 @@ impl<'a> Parser<'a> {
         let mut col = 0;
         if row != 0 {
             for (i, ch) in substr.chars().rev().enumerate() {
-                if ch == '\n' {
+                if ch == NEWLINE {
                     break;
                 }
                 col = i;
@@ -113,78 +151,135 @@ impl<'a> Parser<'a> {
         }
         (row, col)
     }
-    fn error(&mut self, error_string: String, lexeme: &Lexeme) {
-        let (row, col) = self.row_and_col_of(lexeme);
-
-        self.errors
-            .push(format!("{}:{} > {}", row, col, error_string));
+    /// pushes an error with context to self.errors
+    fn report_error(&mut self, error_string: String, lexeme: Option<&Lexeme>) {
+        let (row, col): (usize, usize);
+        if lexeme.is_some() {
+            (row, col) = self.row_and_col_of(lexeme.unwrap());
+            self.errors
+                .push(format!("{}:{} > {}", row, col, error_string));
+        } else {
+            self.errors.push(format!("EOF > {}", error_string));
+        }
     }
+    /// Pattern: an entire program lol
     fn program(&mut self) -> Ast {
         let mut ast: Ast = Vec::<AstNode>::new();
 
         while self.lexemes.peek().is_some() {
             match self.lexemes.next().unwrap().token {
-                Token::Function => ast.push(self.function_declaration()),
+                Token::Function => {
+                    let func = self.function_declaration();
+                    if func.is_some() {
+                        ast.push(func.unwrap());
+                    }
+                }
                 Token::Var => ast.push(self.global_variable_declaration()),
-                _ => unimplemented!(),
+                _ => {}
             }
+        }
+        for e in &self.errors {
+            println!("{}", e);
         }
         ast
     }
-    fn function_declaration(&mut self) -> AstNode {
-        let ident = self.ident();
-        if self.lexemes.peek().is_none() {
-            panic!("missing opening bracket on function declaration");
-        }
-        if self.lexemes.next().unwrap().token != Token::OpenParen {
-            panic!("missing opening bracket or malformed argument list in function declaration");
-        }
+    /// Pattern: function %ident%(%ident with explicit type%, ...) ?returns %type%? { %block% }
+    fn function_declaration(&mut self) -> Option<AstNode> {
+        let identifier = self.ident()?;
+
+        self.expect(
+            Token::OpenParen,
+            "Function parameter list requires '(' at the start",
+        )?;
+
         let mut params: Vec<(String, Type)> = Vec::new();
-        while self.lexemes.peek().unwrap().token == Token::Ident {
+        while !self.next_is(Token::CloseParen) {
             let param = self.ident_with_explicit_type();
-            params.push(param);
+            params.push(param?);
+            if self.next_is(Token::Comma) {
+                self.lexemes.next();
+            }
         }
-        unimplemented!()
-        /*
-        FunctionDecl(FunctionDecl { identifier: ident, params, /*returntype, block*/}
-        */
-    }
-    fn ident_with_explicit_type(&mut self) -> (String, Type) {
-        let ident = self.ident();
-        let vartype = self.explicit_type();
-        (ident, vartype)
-    }
-    pub fn explicit_type(&mut self) -> Type {
-        if self.lexemes.peek().is_none() || self.lexemes.peek().unwrap().token != Token::As {
-            panic!("expected 'as'");
+
+        self.expect(
+            Token::CloseParen,
+            "Function parameter list requires ')' at the end",
+        )?;
+
+        let mut returntype = Type::Nothing;
+        if self.next_is(Token::Returns) {
+            returntype = self.func_return_type()?;
         }
-        self.lexemes.next();
+        self.expect(
+            Token::OpenBracket,
+            "Function block definition must be properly enclosed in curly brackets.",
+        )?;
+        let block = self.block();
+        self.expect(
+            Token::CloseBracket,
+            "Function block definition must be properly enclosed in curly brackets.",
+        )?;
+
+        let fndecl = Some(AstNode::FunctionDecl(FunctionDecl {
+            identifier,
+            params,
+            returntype,
+            block,
+        }));
+        println!("{:?}", fndecl);
+        fndecl
+    }
+    fn block(&mut self) -> Block {
+        vec![]
+    }
+    /// Pattern: returns %type%
+    fn func_return_type(&mut self) -> Option<Type> {
+        self.expect(Token::Returns, "Specifying function return type")?;
+        self.type_identifier()
+    }
+    /// Pattern: %ident% as %type%
+    fn ident_with_explicit_type(&mut self) -> Option<(String, Type)> {
+        let ident = self.ident()?;
+        let vartype = self.explicit_type()?;
+        Some((ident, vartype))
+    }
+    /// Pattern: as %type%
+    fn explicit_type(&mut self) -> Option<Type> {
+        self.expect(Token::As, "Specifying an explicit type")?;
         let vartype = self.type_identifier();
         vartype
     }
-    fn type_identifier(&mut self) -> Type {
-        if self.lexemes.peek().is_none() {
-            panic!("expected type aftre 'as'");
-        }
-        match self.lexemes.peek().unwrap().token {
-            Token::IntType => Type::Int,
-            Token::FloatType => Type::Float,
-            Token::BoolType => Type::Bool,
-            Token::StrType => Type::Str,
-            Token::NothingType => Type::Nothing,
-            _ => panic!("unknown type"),
-        }
-    }
-    fn ident(&mut self) -> String {
-        let lexeme = self.lexemes.next().unwrap();
-        if lexeme.token == Token::Ident {
-            return self.file_str[lexeme.span.start..lexeme.span.end].to_owned();
-        } else {
-            panic!("expected ident");
-        }
-    }
     fn global_variable_declaration(&mut self) -> AstNode {
         unimplemented!()
+    }
+
+    /* single thingies */
+
+    /// Pattern: %ident%
+    fn ident(&mut self) -> Option<String> {
+        let lexeme = self.expect(
+            Token::Ident,
+            "Ident required to name function declaration or variable declaration",
+        )?;
+        Some(self.file_str[lexeme.span.start..lexeme.span.end].to_owned())
+    }
+    /// Pattern: %type%
+    fn type_identifier(&mut self) -> Option<Type> {
+        let lexeme = self.expect(Token::Any, "Required a datatype, but reached EOF")?;
+        match lexeme.token {
+            Token::IntType => Some(Type::Int),
+            Token::FloatType => Some(Type::Float),
+            Token::BoolType => Some(Type::Bool),
+            Token::StrType => Some(Type::Str),
+            Token::NothingType => Some(Type::Nothing),
+            _ => {
+                self.report_error(
+                    format!("Expected type, found {:?}", lexeme.token),
+                    Some(&lexeme),
+                );
+                None
+            }
+        }
     }
 }
 
