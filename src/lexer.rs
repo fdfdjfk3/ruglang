@@ -13,6 +13,7 @@ pub enum LexerError {
 pub enum Token {
     Ident,
     Var,
+    Final,
     Function,
     As,
     Returns,
@@ -61,9 +62,6 @@ pub enum Token {
     Unknown,
 
     Comment,
-
-    // only for use in the ast file, used as a wildcard
-    Any,
 }
 
 /// Copyable range
@@ -213,6 +211,7 @@ impl Navigator<'_> {
             "true" => Token::BoolLiteral,
             "false" => Token::BoolLiteral,
             "var" => Token::Var,
+            "final" => Token::Final,
             "function" => Token::Function,
             "as" => Token::As,
             "returns" => Token::Returns,

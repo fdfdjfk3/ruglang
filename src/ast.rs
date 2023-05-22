@@ -72,11 +72,18 @@ pub enum Type {
     Custom(String),
 }
 
+#[derive(PartialEq)]
+enum ParseState {
+    Recovering,
+    Ok,
+}
+
 pub struct Parser<'a> {
     pub lexemes: Peekable<Box<dyn Iterator<Item = Lexeme> + 'a>>,
     pub file_str: &'a str,
     // errors will be tracked sooon
     pub errors: Vec<String>,
+    state: ParseState,
 }
 
 impl<'a> Parser<'a> {
@@ -93,6 +100,7 @@ impl<'a> Parser<'a> {
             lexemes,
             file_str,
             errors: Vec::new(),
+            state: ParseState::Ok,
         }
     }
     /// checks what's ahead and returns it in an option. if the iterator returns None, this
@@ -158,6 +166,7 @@ impl<'a> Parser<'a> {
     }
     /// pushes an error with context to self.errors
     fn report_error(&mut self, error_string: String, lexeme: Option<Lexeme>) {
+        self.state = ParseState::Recovering;
         let (row, col): (usize, usize);
         if lexeme.is_some() {
             (row, col) = self.row_and_col_of(lexeme.unwrap());
@@ -172,15 +181,27 @@ impl<'a> Parser<'a> {
         let mut ast: Ast = Vec::<AstNode>::new();
 
         while self.lexemes.peek().is_some() {
-            match self.lexemes.next().unwrap().token {
+            let lexeme = self.lexemes.next();
+            match lexeme.unwrap().token {
                 Token::Function => {
+                    self.state = ParseState::Ok;
                     let func = self.function_declaration();
                     if func.is_some() {
                         ast.push(func.unwrap());
                     }
                 }
-                Token::Var => ast.push(self.global_variable_declaration()),
-                _ => {}
+                Token::Var => {
+                    self.state = ParseState::Ok;
+                    ast.push(self.global_variable_declaration());
+                }
+                token => {
+                    if self.state == ParseState::Ok {
+                        self.report_error(
+                            format!("Unknown token {:?} found at top level", token),
+                            lexeme,
+                        );
+                    }
+                }
             }
         }
         for e in &self.errors {
@@ -219,7 +240,7 @@ impl<'a> Parser<'a> {
             Token::OpenBracket,
             "Function block definition must be properly enclosed in curly brackets",
         )?;
-        let block = self.block();
+        let block = self.block()?;
         self.expect(
             Token::CloseBracket,
             "Function block definition must be properly enclosed in curly brackets",
@@ -234,11 +255,14 @@ impl<'a> Parser<'a> {
         println!("{:?}", fndecl);
         fndecl
     }
-    fn block(&mut self) -> Block {
+    fn block(&mut self) -> Option<Block> {
         let mut block: Block = Vec::<AstNode>::new();
-
-        while !self.next_is(Token::CloseBracket) && self.lexemes.peek().is_some() {}
-        block
+        while !self.next_is(Token::CloseBracket) && self.lexemes.peek().is_some() {
+            match self.lexemes.peek().unwrap() {
+                _ => {}
+            }
+        }
+        Some(block)
     }
     /// Pattern: returns %type%
     fn func_return_type(&mut self) -> Option<Type> {

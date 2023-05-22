@@ -21,9 +21,6 @@ fn main() {
     let mut parser = ast::Parser::new(tokens.peekable(), &text);
     let ast = parser.parse();
 
-    for a in parser.errors {
-        println!("{}", a);
-    }
     /*
     if let ast::AstNode::Program {
         contents: ref c, ..
