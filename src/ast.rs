@@ -25,9 +25,9 @@ pub struct FunctionDecl {
 
 #[derive(Debug, Clone)]
 pub struct VarDecl {
-    identifier: String,
+    ident: String,
     value: Expr,
-    immutable: bool,
+    mutable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -49,17 +49,29 @@ pub enum Expr {
     Ident(String),
     FnCall(String, Vec<Expr>),
 
-    Add(Box<Expr>, Box<Expr>),
-    Sub(Box<Expr>, Box<Expr>),
-    Mul(Box<Expr>, Box<Expr>),
-    Div(Box<Expr>, Box<Expr>),
+    BinOp(BinOp, Box<Expr>, Box<Expr>),
+    UnaryOp(UnaryOp, Box<Expr>),
+}
 
-    Eq(Box<Expr>, Box<Expr>),
-    Ne(Box<Expr>, Box<Expr>),
-    Gt(Box<Expr>, Box<Expr>),
-    Ge(Box<Expr>, Box<Expr>),
-    Lt(Box<Expr>, Box<Expr>),
-    Le(Box<Expr>, Box<Expr>),
+#[derive(Debug, Clone)]
+enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+
+    Eq,
+    Ne,
+    Gt,
+    Ge,
+    Lt,
+    Le,
+}
+
+#[derive(Debug, Clone)]
+enum UnaryOp {
+    Neg,
+    Not,
 }
 
 #[derive(Debug, Clone)]
@@ -255,11 +267,27 @@ impl<'a> Parser<'a> {
         println!("{:?}", fndecl);
         fndecl
     }
+    /// a block of statements
     fn block(&mut self) -> Option<Block> {
         let mut block: Block = Vec::<AstNode>::new();
         while !self.next_is(Token::CloseBracket) && self.lexemes.peek().is_some() {
-            match self.lexemes.peek().unwrap() {
-                _ => {}
+            let lexeme = self.lexemes.peek().copied().unwrap();
+            match lexeme.token {
+                Token::Var => {
+                    self.lexemes.next();
+                    let variable = self.variable_declaration();
+                    if variable.is_some() {
+                        block.push(variable.unwrap());
+                    }
+                }
+                token => {
+                    if self.state == ParseState::Ok {
+                        self.report_error(
+                            format!("expected statement, found {:?}", token),
+                            Some(lexeme),
+                        );
+                    }
+                }
             }
         }
         Some(block)
@@ -283,6 +311,20 @@ impl<'a> Parser<'a> {
     }
     fn global_variable_declaration(&mut self) -> AstNode {
         unimplemented!()
+    }
+    fn variable_declaration(&mut self) -> Option<AstNode> {
+        let ident = self.ident()?;
+        self.expect(
+            Token::Set,
+            "Variable declaration, '=' sign is required to assign an expression to a value",
+        );
+        let expr = self.expression()?;
+
+        Some(AstNode::VarDecl(VarDecl {
+            ident,
+            value: expr,
+            mutable: true,
+        }))
     }
 
     /* single thingies */
@@ -312,5 +354,11 @@ impl<'a> Parser<'a> {
                 None
             }
         }
+    }
+
+    /* expression stuff vvvv */
+
+    fn expression(&mut self) -> Option<Expr> {
+        unimplemented!()
     }
 }

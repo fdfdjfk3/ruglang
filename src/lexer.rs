@@ -29,7 +29,7 @@ pub enum Token {
     BoolType,
     NothingType,
     // =
-    Equals,
+    Set,
     // +
     Plus,
     // -
@@ -110,7 +110,7 @@ impl Navigator<'_> {
 
             c if c.is_ascii_digit() => self.number(),
 
-            '=' => Token::Equals,
+            '=' => Token::Set,
             '+' => Token::Plus,
             '-' => Token::Minus,
             '*' => Token::Asterisk,
