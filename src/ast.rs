@@ -359,6 +359,44 @@ impl<'a> Parser<'a> {
     /* expression stuff vvvv */
 
     fn expression(&mut self) -> Option<Expr> {
+        self.expression_recursive()
+    }
+
+    fn expression_recursive(&mut self) -> Option<Expr> {
+        let mut lside = self.lexemes.next();
         unimplemented!()
+    }
+
+    /// this function parses either an ident or a function call
+    fn ident_or_fncall_expr(&mut self) -> Option<Expr> {
+        let ident = self.expect(
+            Token::Ident,
+            "Expected an identifier to begin an ident expression or function call",
+        )?;
+        let ident = self.file_str[ident.span.start..ident.span.end].to_owned();
+        if !self.next_is(Token::OpenParen) {
+            return Some(Expr::Ident(ident));
+        }
+        self.expect(
+            Token::OpenParen,
+            "it should be impossible to reach this error lol",
+        )?;
+        let args = self.argument_list()?;
+        self.expect(Token::CloseParen, "Function argument list closure")?;
+
+        Some(Expr::FnCall(ident, args))
+    }
+
+    /// this is responsible for parsing the argument list of a function call.
+    fn argument_list(&mut self) -> Option<Vec<Expr>> {
+        let mut args = Vec::<Expr>::new();
+        while self.lexemes.peek().is_some() && !self.next_is(Token::CloseParen) {
+            let expr = self.expression()?;
+            args.push(expr);
+            if self.next_is(Token::Comma) {
+                self.lexemes.next();
+            }
+        }
+        Some(args)
     }
 }
