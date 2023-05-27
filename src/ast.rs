@@ -290,6 +290,8 @@ impl<'a> Parser<'a> {
                             format!("expected statement, found {:?}", token),
                             Some(lexeme),
                         );
+                    } else {
+                        self.lexemes.next();
                     }
                 }
             }
@@ -405,7 +407,9 @@ impl<'a> Parser<'a> {
                     );
                     None
                 }
-                Token::Semicolon => break,
+                // TODO: this is really hacky. figure out a better way to break on commas and
+                // close parentheses in function calls.
+                Token::Semicolon | Token::Comma | Token::CloseParen => break,
                 t if is_binary_op(t) => {
                     let lexeme = self.lexemes.peek().unwrap();
                     let op = token_to_binop(lexeme.token);
@@ -453,7 +457,7 @@ impl<'a> Parser<'a> {
     /// this is responsible for parsing the argument list of a function call.
     fn argument_list(&mut self) -> Option<Vec<Expr>> {
         let mut args = Vec::<Expr>::new();
-        while self.lexemes.peek().is_some() && !self.next_is(Token::CloseParen) {
+        while !self.next_is(Token::CloseParen) {
             let expr = self.expression()?;
             args.push(expr);
             if self.next_is(Token::Comma) {
