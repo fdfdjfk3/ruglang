@@ -1,6 +1,7 @@
 mod ast;
 mod lexer;
 mod navigator;
+mod utils;
 
 use std::fs::File;
 use std::io::Read;

@@ -1,5 +1,6 @@
 use crate::lexer::{Lexeme, Token};
 use crate::navigator::{EOF, NEWLINE};
+use crate::utils::*;
 
 use std::iter::Peekable;
 
@@ -53,8 +54,8 @@ pub enum Expr {
     UnaryOp(UnaryOp, Box<Expr>),
 }
 
-#[derive(Debug, Clone)]
-enum BinOp {
+#[derive(Debug, Clone, Copy)]
+pub enum BinOp {
     Add,
     Sub,
     Mul,
@@ -68,8 +69,8 @@ enum BinOp {
     Le,
 }
 
-#[derive(Debug, Clone)]
-enum UnaryOp {
+#[derive(Debug, Clone, Copy)]
+pub enum UnaryOp {
     Neg,
     Not,
 }
@@ -280,6 +281,9 @@ impl<'a> Parser<'a> {
                         block.push(variable.unwrap());
                     }
                 }
+                Token::Semicolon => {
+                    self.lexemes.next();
+                }
                 token => {
                     if self.state == ParseState::Ok {
                         self.report_error(
@@ -356,24 +360,83 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Pattern: a literal, use your imagination
+    fn literal(&mut self) -> Option<Expr> {
+        let lexeme = self.expect_not_eof("Literal expected")?;
+        let datatype = match lexeme.token {
+            Token::IntLiteral => Type::Int,
+            Token::FloatLiteral => Type::Float,
+            Token::BoolLiteral => Type::Bool,
+            Token::StrLiteral => Type::Str,
+            r#type => panic!("encountered unknown data type: {:?}", r#type),
+        };
+        let representation = self.file_str[lexeme.span.start..lexeme.span.end].to_owned();
+        Some(Expr::Literal(representation, datatype))
+    }
+
     /* expression stuff vvvv */
 
     fn expression(&mut self) -> Option<Expr> {
-        self.expression_recursive()
+        self.expression_recursive(0)
     }
 
-    fn expression_recursive(&mut self) -> Option<Expr> {
-        let mut lside = self.lexemes.next();
-        unimplemented!()
+    fn expression_recursive(&mut self, min_binding_power: u8) -> Option<Expr> {
+        let mut lside = match self.peek_type() {
+            t if is_prim_literal(t) => self.literal()?,
+
+            Token::Ident => self.ident_or_fncall_expr()?,
+            Token::EOF => {
+                self.report_error(format!("hit eof in expression"), None);
+                return None;
+            }
+            _ => {
+                let lexeme = self.lexemes.next().unwrap();
+                self.report_error(format!("invalid token in expression"), Some(lexeme));
+                return None;
+            }
+        };
+
+        loop {
+            let op = match self.peek_type() {
+                Token::EOF => {
+                    self.report_error(
+                        "expected semicolon or continuation of expression".into(),
+                        None,
+                    );
+                    None
+                }
+                Token::Semicolon => break,
+                t if is_binary_op(t) => {
+                    let lexeme = self.lexemes.peek().unwrap();
+                    let op = token_to_binop(lexeme.token);
+                    Some(op)
+                }
+                _ => {
+                    let lexeme = self.lexemes.next();
+                    self.report_error(
+                        "Expected semicolon or continuation of expression".into(),
+                        lexeme,
+                    );
+                    None
+                }
+            }?;
+
+            let (lbp, rbp) = infix_binding_power(op);
+            if lbp < min_binding_power {
+                break;
+            }
+
+            self.lexemes.next();
+            let rside = self.expression_recursive(rbp)?;
+
+            lside = Expr::BinOp(op, Box::new(lside), Box::new(rside));
+        }
+        Some(lside)
     }
 
     /// this function parses either an ident or a function call
     fn ident_or_fncall_expr(&mut self) -> Option<Expr> {
-        let ident = self.expect(
-            Token::Ident,
-            "Expected an identifier to begin an ident expression or function call",
-        )?;
-        let ident = self.file_str[ident.span.start..ident.span.end].to_owned();
+        let ident = self.ident()?;
         if !self.next_is(Token::OpenParen) {
             return Some(Expr::Ident(ident));
         }
