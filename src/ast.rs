@@ -51,6 +51,7 @@ pub enum Expr {
     FnCall(String, Vec<Expr>),
 
     BinOp(BinOp, Box<Expr>, Box<Expr>),
+    CompOp(CompOp, Box<Expr>, Box<Expr>),
     UnaryOp(UnaryOp, Box<Expr>),
 }
 
@@ -60,7 +61,10 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+}
 
+#[derive(Debug, Clone, Copy)]
+pub enum CompOp {
     Eq,
     Ne,
     Gt,
@@ -312,8 +316,7 @@ impl<'a> Parser<'a> {
     /// Pattern: as %type%
     fn explicit_type(&mut self) -> Option<Type> {
         self.expect(Token::As, "Specifying an explicit type")?;
-        let vartype = self.type_identifier();
-        vartype
+        self.type_identifier()
     }
     fn global_variable_declaration(&mut self) -> AstNode {
         unimplemented!()
@@ -376,6 +379,35 @@ impl<'a> Parser<'a> {
         Some(Expr::Literal(representation, datatype))
     }
 
+    fn peek_binary_operator(&mut self) -> Option<AnyOp> {
+        if self.lexemes.peek().is_none() {
+            self.report_error("Expected binary operator, found EOF".into(), None);
+        }
+        let first = self.lexemes.peek().copied().unwrap();
+        match first.token {
+            Token::Plus => Some(AnyOp::BinOp(BinOp::Add)),
+            Token::Minus => Some(AnyOp::BinOp(BinOp::Sub)),
+            Token::Slash => Some(AnyOp::BinOp(BinOp::Div)),
+            Token::Asterisk => Some(AnyOp::BinOp(BinOp::Mul)),
+            token => {
+                self.report_error(
+                    format!("Expected binary operator, found {:?}", token),
+                    Some(first),
+                );
+                None
+            }
+        }
+    }
+
+    /// Pushes past what should be a valid binary operator
+    fn skip_binary_operator(&mut self) {
+        self.lexemes.next();
+    }
+
+    /*
+    fn comparison_operator(&mut self) -> Option<AnyOp> {}
+    */
+
     /* expression stuff vvvv */
 
     fn expression(&mut self) -> Option<Expr> {
@@ -383,6 +415,12 @@ impl<'a> Parser<'a> {
     }
 
     fn expression_recursive(&mut self, min_binding_power: u8) -> Option<Expr> {
+        /*
+        println!(
+            "should be a number or ident: {:?}",
+            self.lexemes.peek().unwrap()
+        );
+        */
         let mut lside = match self.peek_type() {
             t if is_prim_literal(t) => self.literal()?,
 
@@ -393,12 +431,17 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let lexeme = self.lexemes.next().unwrap();
-                self.report_error(format!("invalid token in expression"), Some(lexeme));
+                self.report_error(
+                    format!("invalid token {:?} in expression", lexeme.token),
+                    Some(lexeme),
+                );
                 return None;
             }
         };
 
         loop {
+            // Note for future self: NOTHING in this match statement should push the iterator
+            // forward, or else there will be dire consequences.
             let op = match self.peek_type() {
                 Token::EOF => {
                     self.report_error(
@@ -410,15 +453,19 @@ impl<'a> Parser<'a> {
                 // TODO: this is really hacky. figure out a better way to break on commas and
                 // close parentheses in function calls.
                 Token::Semicolon | Token::Comma | Token::CloseParen => break,
+
                 t if is_binary_op(t) => {
-                    let lexeme = self.lexemes.peek().unwrap();
-                    let op = token_to_binop(lexeme.token);
+                    let op = self.peek_binary_operator()?;
                     Some(op)
                 }
                 _ => {
                     let lexeme = self.lexemes.next();
+                    println!("{:?}", lexeme.unwrap().token);
                     self.report_error(
-                        "Expected semicolon or continuation of expression".into(),
+                        format!(
+                            "Expected semicolon or continuation of expression, found {:?}",
+                            lexeme.unwrap().token
+                        ),
                         lexeme,
                     );
                     None
@@ -430,10 +477,14 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            self.lexemes.next();
+            self.skip_binary_operator();
             let rside = self.expression_recursive(rbp)?;
 
-            lside = Expr::BinOp(op, Box::new(lside), Box::new(rside));
+            if let AnyOp::BinOp(x) = op {
+                lside = Expr::BinOp(x, Box::new(lside), Box::new(rside));
+            } else if let AnyOp::CompOp(x) = op {
+                lside = Expr::CompOp(x, Box::new(lside), Box::new(rside));
+            }
         }
         Some(lside)
     }
@@ -466,4 +517,13 @@ impl<'a> Parser<'a> {
         }
         Some(args)
     }
+}
+
+/// This is just for the expression parser to easily pass around operation types. Don't use this
+/// anywhere else, and if it is used, it should be destructured as soon as possible.
+#[derive(Debug, Clone, Copy)]
+pub enum AnyOp {
+    BinOp(BinOp),
+    CompOp(CompOp),
+    UnaryOp(UnaryOp),
 }

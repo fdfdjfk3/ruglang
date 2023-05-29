@@ -1,4 +1,4 @@
-use crate::ast::BinOp;
+use crate::ast::{AnyOp, BinOp};
 use crate::lexer::Token;
 
 pub fn token_to_binop(token: Token) -> BinOp {
@@ -13,24 +13,33 @@ pub fn token_to_binop(token: Token) -> BinOp {
 }
 
 pub fn is_prim_literal(token: Token) -> bool {
-    match token {
-        Token::StrLiteral | Token::IntLiteral | Token::FloatLiteral | Token::BoolLiteral => true,
-        _ => false,
-    }
+    matches!(
+        token,
+        Token::StrLiteral | Token::IntLiteral | Token::FloatLiteral | Token::BoolLiteral
+    )
 }
 
 /// not all tokens yet
 pub fn is_binary_op(token: Token) -> bool {
-    match token {
-        Token::Plus | Token::Minus | Token::Slash | Token::Asterisk => true,
-        _ => false,
-    }
+    matches!(
+        token,
+        Token::Plus | Token::Minus | Token::Slash | Token::Asterisk
+    )
 }
 
-pub fn infix_binding_power(op: BinOp) -> (u8, u8) {
-    match op {
-        BinOp::Add | BinOp::Sub => (1, 2),
-        BinOp::Mul | BinOp::Div => (3, 4),
-        _ => panic!("bad op"),
+/// comparisons (for ones that return boolean value)
+/*
+pub fn is_probably_comp_op(token: Token) -> bool {
+    matches!(token, Token::Set | Token::
+}
+*/
+
+pub fn infix_binding_power(op: AnyOp) -> (u8, u8) {
+    if let AnyOp::BinOp(op) = op {
+        return match op {
+            BinOp::Add | BinOp::Sub => (1, 2),
+            BinOp::Mul | BinOp::Div => (3, 4),
+        };
     }
+    (0, 0)
 }

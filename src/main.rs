@@ -5,11 +5,12 @@ mod utils;
 
 use std::fs::File;
 use std::io::Read;
+use std::time::Instant;
 
 fn main() {
     println!("Hello, world!");
     let path = std::path::Path::new("test.rgl");
-    let mut file = File::open(&path).unwrap();
+    let mut file = File::open(path).unwrap();
 
     let mut text = String::new();
     file.read_to_string(&mut text).unwrap();
@@ -19,8 +20,12 @@ fn main() {
         println!("{:?}", token);
     }
     */
+    let start = Instant::now();
+
     let mut parser = ast::Parser::new(tokens.peekable(), &text);
     let ast = parser.parse();
+
+    println!("parsed in {} microseconds", start.elapsed().as_micros());
 
     /*
     if let ast::AstNode::Program {

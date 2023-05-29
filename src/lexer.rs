@@ -28,34 +28,36 @@ pub enum Token {
     FloatType,
     BoolType,
     NothingType,
-    // =
+    /// =
     Set,
-    // +
+    /// +
     Plus,
-    // -
+    /// -
     Minus,
-    // /
+    /// /
     Slash,
-    // *
+    /// *
     Asterisk,
-    // ;
+    /// ;
     Semicolon,
-    // (
+    /// (
     OpenParen,
-    // )
+    /// )
     CloseParen,
-    // {
+    /// {
     OpenBracket,
-    // }
+    /// }
     CloseBracket,
-    // .
+    /// .
     Dot,
-    // <
+    /// <
     LeftAngleBracket,
-    // >
+    /// >
     RightAngleBracket,
-    // ,
+    /// ,
     Comma,
+    /// !
+    Bang,
 
     EOF,
 
@@ -95,7 +97,7 @@ impl Navigator<'_> {
     pub fn read_token(&mut self) -> Lexeme {
         self.skip_whitespace();
         let initial = self.bump();
-        let start = self.position() as usize;
+        let start = self.position();
         let token_type = match initial {
             '/' => match self.first() {
                 '/' => {
@@ -123,11 +125,12 @@ impl Navigator<'_> {
             '<' => Token::LeftAngleBracket,
             '>' => Token::RightAngleBracket,
             ',' => Token::Comma,
+            '!' => Token::Bang,
 
             EOF => Token::EOF,
             _ => Token::Unknown,
         };
-        let end = self.position() as usize + 1;
+        let end = self.position() + 1;
         Lexeme {
             token: token_type,
             span: Span { start, end },
@@ -201,11 +204,11 @@ impl Navigator<'_> {
         Token::Ident
     }
     fn boolean_or_ident(&mut self) -> Token {
-        let start = self.position() as usize;
+        let start = self.position();
         while unicode_xid::UnicodeXID::is_xid_continue(self.first()) {
             self.bump();
         }
-        let end = self.position() as usize + 1;
+        let end = self.position() + 1;
         let segment = self.yoink_to_string(start, end);
         match &segment[..] {
             "true" => Token::BoolLiteral,
