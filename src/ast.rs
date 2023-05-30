@@ -144,11 +144,11 @@ impl<'a> Parser<'a> {
     fn expect_not_eof(&mut self, context: &str) -> Option<Lexeme> {
         let next_type = self.peek_type();
         if next_type != Token::EOF {
-            return self.lexemes.next();
+            self.lexemes.next()
         } else {
             let oopsie = self.lexemes.next();
             self.report_error(format!("{}: Premature END-OF-FILE", context,), oopsie);
-            return None;
+            None
         }
     }
 
@@ -381,37 +381,6 @@ impl<'a> Parser<'a> {
         Some(Expr::Literal(representation, datatype))
     }
 
-    fn peek_binary_operator(&mut self) -> Option<AnyOp> {
-        if self.lexemes.peek().is_none() {
-            self.report_error("Expected binary operator, found EOF".into(), None);
-        }
-        let first = self.lexemes.peek().copied().unwrap();
-        match first.token {
-            Token::Plus => Some(AnyOp::BinOp(BinOp::Add)),
-            Token::Minus => Some(AnyOp::BinOp(BinOp::Sub)),
-            Token::Slash => Some(AnyOp::BinOp(BinOp::Div)),
-            Token::Asterisk => Some(AnyOp::BinOp(BinOp::Mul)),
-            token => {
-                self.report_error(
-                    format!("Expected binary operator, found {:?}", token),
-                    Some(first),
-                );
-                None
-            }
-        }
-    }
-
-    /// Pushes past what should be a valid binary operator
-    fn skip_binary_operator(&mut self) {
-        self.lexemes.next();
-    }
-
-    /*
-    fn comparison_operator(&mut self) -> Option<AnyOp> {}
-    */
-
-    /* expression stuff vvvv */
-
     fn expression(&mut self) -> Option<Expr> {
         self.expression_recursive(0)
     }
@@ -435,7 +404,7 @@ impl<'a> Parser<'a> {
 
             Token::Ident => self.ident_or_fncall_expr()?,
             Token::EOF => {
-                self.report_error(format!("hit eof in expression"), None);
+                self.report_error("hit eof in expression".into(), None);
                 return None;
             }
             _ => {
@@ -464,7 +433,11 @@ impl<'a> Parser<'a> {
                 Token::Semicolon | Token::Comma | Token::CloseParen => break,
 
                 t if is_binary_op(t) => {
-                    let op = self.peek_binary_operator()?;
+                    let op = binary_op_from_token(t);
+                    Some(op)
+                }
+                t if is_comparison_op(t) => {
+                    let op = comparison_op_from_token(t);
                     Some(op)
                 }
                 _ => {
@@ -486,7 +459,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            self.skip_binary_operator();
+            self.lexemes.next();
             let rside = self.expression_recursive(rbp)?;
 
             if let AnyOp::BinOp(x) = op {

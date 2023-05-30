@@ -58,6 +58,22 @@ pub enum Token {
     Comma,
     /// !
     Bang,
+    /// &
+    Ampersand,
+    /// |
+    Pipe,
+    /// >=
+    Ge,
+    /// <=
+    Le,
+    /// ==
+    Eq,
+    /// !=
+    Ne,
+    /// &&
+    And,
+    /// ||
+    Or,
 
     EOF,
 
@@ -112,7 +128,6 @@ impl Navigator<'_> {
 
             c if c.is_ascii_digit() => self.number(),
 
-            '=' => Token::Set,
             '+' => Token::Plus,
             '-' => Token::Minus,
             '*' => Token::Asterisk,
@@ -122,10 +137,55 @@ impl Navigator<'_> {
             '{' => Token::OpenBracket,
             '}' => Token::CloseBracket,
             '.' => Token::Dot,
-            '<' => Token::LeftAngleBracket,
-            '>' => Token::RightAngleBracket,
+            // = or ==
+            '=' => match self.first() {
+                '=' => {
+                    self.bump();
+                    Token::Eq
+                }
+                _ => Token::Set,
+            },
+            // < or <=
+            '<' => match self.first() {
+                '=' => {
+                    self.bump();
+                    Token::Le
+                }
+                _ => Token::LeftAngleBracket,
+            },
+            // > or >=
+            '>' => match self.first() {
+                '=' => {
+                    self.bump();
+                    Token::Ge
+                }
+                _ => Token::RightAngleBracket,
+            },
             ',' => Token::Comma,
-            '!' => Token::Bang,
+            // ! or !=
+            '!' => match self.first() {
+                '=' => {
+                    self.bump();
+                    Token::Ne
+                }
+                _ => Token::Bang,
+            },
+            // & or &&
+            '&' => match self.first() {
+                '&' => {
+                    self.bump();
+                    Token::And
+                }
+                _ => Token::Ampersand,
+            },
+            // | or ||
+            '|' => match self.first() {
+                '|' => {
+                    self.bump();
+                    Token::Or
+                }
+                _ => Token::Pipe,
+            },
 
             EOF => Token::EOF,
             _ => Token::Unknown,

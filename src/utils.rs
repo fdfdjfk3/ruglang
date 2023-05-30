@@ -20,18 +20,29 @@ pub fn is_binary_op(token: Token) -> bool {
     )
 }
 
-/// comparisons (for ones that return boolean value)
-/*
-pub fn is_probably_comp_op(token: Token) -> bool {
-    matches!(token, Token::Set | Token::
+pub fn is_comparison_op(token: Token) -> bool {
+    matches!(
+        token,
+        Token::Eq
+            | Token::Ne
+            | Token::LeftAngleBracket
+            | Token::RightAngleBracket
+            | Token::Ge
+            | Token::Le
+    )
 }
-*/
 
 pub fn infix_binding_power(op: AnyOp) -> (u8, u8) {
     if let AnyOp::BinOp(op) = op {
         return match op {
-            BinOp::Add | BinOp::Sub => (1, 2),
-            BinOp::Mul | BinOp::Div => (3, 4),
+            BinOp::Add | BinOp::Sub => (5, 6),
+            BinOp::Mul | BinOp::Div => (7, 8),
+        };
+    } else if let AnyOp::CompOp(op) = op {
+        return match op {
+            CompOp::Eq | CompOp::Ne => (1, 2),
+            CompOp::Gt | CompOp::Ge | CompOp::Lt | CompOp::Le => (3, 4),
+            CompOp::And | CompOp::Or => panic!("not implemented"),
         };
     }
     panic!("Not an infix operation. Your computer is going to explode in 10 seconds.");
@@ -39,8 +50,8 @@ pub fn infix_binding_power(op: AnyOp) -> (u8, u8) {
 
 pub fn prefix_binding_power(op: Token) -> ((), u8) {
     match op {
-        Token::Minus => ((), 5),
-        Token::Bang => ((), 5),
+        Token::Minus => ((), 10),
+        Token::Bang => ((), 10),
         _ => panic!("Not a prefix operation L bozo"),
     }
 }
@@ -50,5 +61,27 @@ pub fn prefix_op_from_token(op: Token) -> UnaryOp {
         Token::Minus => UnaryOp::Neg,
         Token::Bang => UnaryOp::Not,
         _ => panic!("fdsfjlk d fjsl nvd fiw"),
+    }
+}
+
+pub fn binary_op_from_token(op: Token) -> AnyOp {
+    match op {
+        Token::Plus => AnyOp::BinOp(BinOp::Add),
+        Token::Minus => AnyOp::BinOp(BinOp::Sub),
+        Token::Slash => AnyOp::BinOp(BinOp::Div),
+        Token::Asterisk => AnyOp::BinOp(BinOp::Mul),
+        _ => panic!("if you got this error, some kind of weird space time anomaly occured, because in the regular parsing code this should be completely impossible to reach. either that or i just need to devote my time and effort to more meaningful hobbies."),
+    }
+}
+
+pub fn comparison_op_from_token(op: Token) -> AnyOp {
+    match op {
+        Token::Eq => AnyOp::CompOp(CompOp::Eq),
+        Token::Ne => AnyOp::CompOp(CompOp::Ne),
+        Token::LeftAngleBracket => AnyOp::CompOp(CompOp::Lt),
+        Token::RightAngleBracket => AnyOp::CompOp(CompOp::Lt),
+        Token::Ge => AnyOp::CompOp(CompOp::Ge),
+        Token::Le => AnyOp::CompOp(CompOp::Le),
+        _ => panic!("idgaf"),
     }
 }
