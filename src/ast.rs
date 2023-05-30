@@ -71,6 +71,8 @@ pub enum CompOp {
     Ge,
     Lt,
     Le,
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -423,6 +425,13 @@ impl<'a> Parser<'a> {
         */
         let mut lside = match self.peek_type() {
             t if is_prim_literal(t) => self.literal()?,
+            t if is_prefix_op(t) => {
+                let ((), rbp) = prefix_binding_power(t);
+                self.lexemes.next();
+                let rside = self.expression_recursive(rbp)?;
+                let op = prefix_op_from_token(t);
+                Expr::UnaryOp(op, Box::new(rside))
+            }
 
             Token::Ident => self.ident_or_fncall_expr()?,
             Token::EOF => {
