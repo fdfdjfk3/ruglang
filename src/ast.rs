@@ -14,6 +14,7 @@ pub enum AstNode {
     VarDecl(VarDecl),
     IfStatement(IfStatement),
     WhileStatement(WhileStatement),
+    LoneExpression(Expr),
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +62,7 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+    Set,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -147,7 +149,7 @@ impl<'a> Parser<'a> {
             self.lexemes.next()
         } else {
             let oopsie = self.lexemes.next();
-            self.report_error(format!("{}: Premature END-OF-FILE", context,), oopsie);
+            self.report_error(format!("{}: Premature EOF", context), oopsie);
             None
         }
     }
@@ -243,6 +245,12 @@ impl<'a> Parser<'a> {
             params.push(param?);
             if self.next_is(Token::Comma) {
                 self.lexemes.next();
+            } else if !self.next_is(Token::CloseParen) {
+                let lexeme = self.lexemes.peek().copied();
+                self.report_error(
+                    "Expected comma between each function parameter".into(),
+                    lexeme,
+                );
             }
         }
 
@@ -255,15 +263,7 @@ impl<'a> Parser<'a> {
         if self.next_is(Token::Returns) {
             returntype = self.func_return_type()?;
         }
-        self.expect(
-            Token::OpenBracket,
-            "Function block definition must be properly enclosed in curly brackets",
-        )?;
         let block = self.block()?;
-        self.expect(
-            Token::CloseBracket,
-            "Function block definition must be properly enclosed in curly brackets",
-        )?;
 
         let fndecl = Some(AstNode::FunctionDecl(FunctionDecl {
             identifier,
@@ -276,15 +276,32 @@ impl<'a> Parser<'a> {
     }
     /// a block of statements
     fn block(&mut self) -> Option<Block> {
+        self.expect(Token::OpenBracket, "Expected a '{' before block")?;
         let mut block: Block = Vec::<AstNode>::new();
         while !self.next_is(Token::CloseBracket) && self.lexemes.peek().is_some() {
             let lexeme = self.lexemes.peek().copied().unwrap();
             match lexeme.token {
                 Token::Var => {
+                    self.state = ParseState::Ok;
                     self.lexemes.next();
                     let variable = self.variable_declaration();
                     if variable.is_some() {
                         block.push(variable.unwrap());
+                    }
+                }
+                Token::Ident => {
+                    self.state = ParseState::Ok;
+                    let expr = self.expression();
+                    if expr.is_some() {
+                        block.push(AstNode::LoneExpression(expr.unwrap()));
+                    }
+                }
+                Token::If => {
+                    self.state = ParseState::Ok;
+                    self.lexemes.next();
+                    let if_statement = self.if_statement();
+                    if if_statement.is_some() {
+                        block.push(if_statement.unwrap());
                     }
                 }
                 Token::Semicolon => {
@@ -302,7 +319,17 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        self.expect(Token::CloseBracket, "Expected a '}' after block")?;
         Some(block)
+    }
+    fn if_statement(&mut self) -> Option<AstNode> {
+        let condition = self.expression()?;
+        let if_true = self.block()?;
+        Some(AstNode::IfStatement(IfStatement {
+            condition,
+            if_true,
+            if_false: vec![],
+        }))
     }
     /// Pattern: returns %type%
     fn func_return_type(&mut self) -> Option<Type> {
@@ -430,7 +457,7 @@ impl<'a> Parser<'a> {
                 }
                 // TODO: this is really hacky. figure out a better way to break on commas and
                 // close parentheses in function calls.
-                Token::Semicolon | Token::Comma | Token::CloseParen => break,
+                Token::Semicolon | Token::Comma | Token::CloseParen | Token::OpenBracket => break,
 
                 t if is_binary_op(t) => {
                     let op = binary_op_from_token(t);

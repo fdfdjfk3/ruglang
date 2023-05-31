@@ -16,7 +16,7 @@ pub fn is_prefix_op(token: Token) -> bool {
 pub fn is_binary_op(token: Token) -> bool {
     matches!(
         token,
-        Token::Plus | Token::Minus | Token::Slash | Token::Asterisk
+        Token::Plus | Token::Minus | Token::Slash | Token::Asterisk | Token::Set
     )
 }
 
@@ -35,6 +35,7 @@ pub fn is_comparison_op(token: Token) -> bool {
 pub fn infix_binding_power(op: AnyOp) -> (u8, u8) {
     if let AnyOp::BinOp(op) = op {
         return match op {
+            BinOp::Set => (0, 1),
             BinOp::Add | BinOp::Sub => (5, 6),
             BinOp::Mul | BinOp::Div => (7, 8),
         };
@@ -70,6 +71,7 @@ pub fn binary_op_from_token(op: Token) -> AnyOp {
         Token::Minus => AnyOp::BinOp(BinOp::Sub),
         Token::Slash => AnyOp::BinOp(BinOp::Div),
         Token::Asterisk => AnyOp::BinOp(BinOp::Mul),
+        Token::Set => AnyOp::BinOp(BinOp::Set),
         _ => panic!("if you got this error, some kind of weird space time anomaly occured, because in the regular parsing code this should be completely impossible to reach. either that or i just need to devote my time and effort to more meaningful hobbies."),
     }
 }
@@ -79,7 +81,7 @@ pub fn comparison_op_from_token(op: Token) -> AnyOp {
         Token::Eq => AnyOp::CompOp(CompOp::Eq),
         Token::Ne => AnyOp::CompOp(CompOp::Ne),
         Token::LeftAngleBracket => AnyOp::CompOp(CompOp::Lt),
-        Token::RightAngleBracket => AnyOp::CompOp(CompOp::Lt),
+        Token::RightAngleBracket => AnyOp::CompOp(CompOp::Gt),
         Token::Ge => AnyOp::CompOp(CompOp::Ge),
         Token::Le => AnyOp::CompOp(CompOp::Le),
         _ => panic!("idgaf"),

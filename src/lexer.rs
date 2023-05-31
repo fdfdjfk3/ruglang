@@ -17,6 +17,7 @@ pub enum Token {
     Function,
     As,
     Returns,
+    If,
 
     StrLiteral,
     IntLiteral,
@@ -278,6 +279,7 @@ impl Navigator<'_> {
             "function" => Token::Function,
             "as" => Token::As,
             "returns" => Token::Returns,
+            "if" => Token::If,
             "Int" => Token::IntType,
             "Float" => Token::FloatType,
             "Bool" => Token::BoolType,
